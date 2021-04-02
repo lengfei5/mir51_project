@@ -12,7 +12,7 @@ RNAfunctions = "/Volumes/groups/cochella/jiwang/scripts/functions/RNAseq_functio
 RNA_QCfunctions =  "/Volumes/groups/cochella/jiwang/scripts/functions/RNAseq_QCs.R"
 
 ### data verision and analysis version
-version.Data = 'Quantseq_R11129_quantseq_hg'
+version.Data = 'Quantseq_R11222_quantseq'
 
 version.analysis = paste0("_", version.Data, "_20210402")
 
@@ -22,8 +22,8 @@ check.quality.by.sample.comparisons = FALSE
 
 
 ### Directories to save results
-design.file = "../exp_design/R11129_quantseq_hg_KO_lines.xlsx"
-dataDir = "../../R11129_quantseq_hg/"
+design.file = "../exp_design/R11222_Quantseq_sampleInfos.csv"
+dataDir = "../../R11222_quantseq/"
 
 resDir = paste0("../results/", version.Data, "/")
 tabDir =  paste0(resDir, "tables/")
@@ -38,12 +38,12 @@ if(!dir.exists(RdataDir)){dir.create(RdataDir)}
 # mainly manully 
 ##########################################
 if(file.exists(design.file)){
-  design = read.xlsx(design.file, sheet = 1, colNames = TRUE, skipEmptyRows = TRUE)
-  
+  design = read.csv(design.file, header = TRUE)
   design = data.frame(design, stringsAsFactors = FALSE)
-  design = design[which(!is.na(design$sample.ID)), ]
   
-  jj = which(colnames(design) == 'Sample.ID')
+  design = design[which(!is.na(design$sample_id)), ]
+  
+  jj = which(colnames(design) == 'sample_id')
   design = design[, c(jj, setdiff(c(1:ncol(design)), jj))]
   
   # select columns to keep
@@ -109,7 +109,7 @@ save(design, aa, file=paste0(RdataDir, 'Design_Raw_readCounts_UMI', version.anal
 ######################################
 Counts.to.Use = "UMI"
 QC.for.cpm = TRUE
-EDA.with.normalized.table = FALSE
+
 
 load(file=paste0(RdataDir, 'Design_Raw_readCounts_UMI', version.analysis, '.Rdata'))
 source(RNAfunctions)
@@ -160,6 +160,8 @@ if(QC.for.cpm){
 ##########################################
 # calculate scaling factor and normalization
 ##########################################
+EDA.with.normalized.table = TRUE
+
 if(EDA.with.normalized.table){
   require(DESeq2)
   samples.sels = setdiff(c(1:nrow(design)), which(design$condition == "none"))
@@ -181,92 +183,12 @@ if(EDA.with.normalized.table){
   
   if(Save.Tables){
     xx = data.frame(fpm, stringsAsFactors = FALSE)
+    
+    xx = xx[grep('^__', rownames(xx), invert = TRUE), ]
+    
     write.csv(xx, file = paste0(tabDir, "Table_normalized_for_", Counts.to.Use,  version.analysis, ".csv"), 
               row.names = TRUE)
   }
   
 }
 
-########################################################
-########################################################
-# Section: pairwise comparisons, each condition vs UN 
-# 
-########################################################
-########################################################
-samples.sels = c(1:nrow(design))
-design.sels = design[samples.sels, ]
-
-pdfname = paste0(resDir, "/Data_KO_vs_WT_", Counts.to.Use, ".pdf")
-pdf(pdfname, width = 12, height = 10)
-par(cex = 1.0, las = 1, mgp = c(2,0.2,0), mar = c(3,2,2,0.2), tcl = -0.3)
-
-##  start DE analysis
-dds <- DESeqDataSetFromMatrix(raw[, samples.sels], DataFrame(design[samples.sels, ]), design = ~ condition)
-
-dds$condition = relevel(dds$condition, "UN.6d")
-
-dds <- dds[ rowSums(counts(dds)) >= lowlyExpressed.readCount.threshold, ]
-dds <- estimateSizeFactors(dds)
-
-cpm = fpm(dds, robust = TRUE)
-
-#colnames(xx) = colnames(xx) = c('wt', 'mutant', 'rescue', 'mir35ko.20degree')
-#pairs(log2(xx), upper.panel = panel.fitting, lower.panel=NULL, cex = 0.4, main = 'Gastrulation')
-
-colnames(cpm) = paste0(colnames(cpm), ".normDESeq2")
-
-dds = estimateDispersions(dds)
-
-plotDispEsts(dds, ylim=c(0.001, 10), cex=1.0)
-abline(h=c(0.1, 0.01), col = 'red', lwd=1.2)
-
-dds = nbinomWaldTest(dds, betaPrior = TRUE)
-resultsNames(dds)
-
-##########################################
-# manually specify pairwise comparisons
-##########################################
-res.ii = results(dds, contrast=c("condition", 'AAVS1KO.6d', 'UN.6d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'TRIM52KO.6d', 'UN.6d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'AAVS1KO.11d', 'UN.11d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'TRIM52KO.11d', 'UN.11d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'DROKO.11d', 'UN.11d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'DGCR8KO.11d', 'UN.11d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-res.ii = results(dds, contrast=c("condition", 'DicerKO.11d', 'UN.11d'))
-names.compare = paste0(unlist(strsplit(as.character(res.ii@elementMetadata$description[2]), ' '))[6:8], collapse = '_') 
-colnames(res.ii) = paste0(colnames(res.ii), '_', names.compare)
-res = data.frame(res, res.ii[, c(2, 5, 6)])
-
-
-xx = data.frame(cpm, res, stringsAsFactors = FALSE)
-xx = xx[grep('^__', rownames(xx), invert = TRUE), ]
-
-write.csv(xx,
-          file = paste0(resDir, "DESeq2.norm_all.KO.vs.UN_", Counts.to.Use,  version.analysis, ".csv"), 
-          row.names = TRUE)
-
-dev.off()
